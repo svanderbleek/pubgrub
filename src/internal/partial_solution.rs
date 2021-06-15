@@ -47,6 +47,7 @@ struct PackageAssignments<P: Package, V: Version> {
 pub struct DatedDerivation<P: Package, V: Version> {
     global_index: u32,
     decision_level: DecisionLevel,
+    intersection: Term<V>,
     cause: IncompId<P, V>,
 }
 
@@ -115,34 +116,42 @@ impl<P: Package, V: Version> PartialSolution<P, V> {
     ) {
         use std::collections::hash_map::Entry;
         let term = store[cause].get(&package).unwrap().negate();
-        let dated_derivation = DatedDerivation {
-            global_index: self.next_global_index,
-            decision_level: self.current_decision_level,
-            cause,
-        };
-        self.next_global_index += 1;
         match self.package_assignments.entry(package) {
             Entry::Occupied(mut occupied) => {
                 let mut pa = occupied.get_mut();
                 pa.highest_decision_level = self.current_decision_level;
+                let intersection;
                 match &mut pa.assignments_intersection {
                     // Check that add_derivation is never called in the wrong context.
                     AssignmentsIntersection::Decision(_) => {
                         panic!("add_derivation should not be called after a decision")
                     }
                     AssignmentsIntersection::Derivations(t) => {
-                        *t = t.intersection(&term);
+                        intersection = t.intersection(&term);
+                        *t = intersection.clone();
                     }
                 }
-                pa.dated_derivations.push(dated_derivation);
+                pa.dated_derivations.push(DatedDerivation {
+                    global_index: self.next_global_index,
+                    decision_level: self.current_decision_level,
+                    intersection,
+                    cause,
+                });
+                self.next_global_index += 1;
             }
             Entry::Vacant(v) => {
                 v.insert(PackageAssignments {
                     smallest_decision_level: self.current_decision_level,
                     highest_decision_level: self.current_decision_level,
-                    dated_derivations: SmallVec::One([dated_derivation]),
+                    dated_derivations: SmallVec::One([DatedDerivation {
+                        global_index: self.next_global_index,
+                        decision_level: self.current_decision_level,
+                        intersection: term.clone(),
+                        cause,
+                    }]),
                     assignments_intersection: AssignmentsIntersection::Derivations(term),
                 });
+                self.next_global_index += 1;
             }
         }
     }
@@ -187,13 +196,9 @@ impl<P: Package, V: Version> PartialSolution<P, V> {
     }
 
     /// Backtrack the partial solution to a given decision level.
-    pub fn backtrack(
-        &mut self,
-        decision_level: DecisionLevel,
-        store: &Arena<Incompatibility<P, V>>,
-    ) {
+    pub fn backtrack(&mut self, decision_level: DecisionLevel) {
         self.current_decision_level = decision_level;
-        self.package_assignments.retain(|p, pa| {
+        self.package_assignments.retain(|_p, pa| {
             if pa.smallest_decision_level > decision_level {
                 // Remove all entries that have a smallest decision level higher than the backtrack target.
                 false
@@ -213,20 +218,14 @@ impl<P: Package, V: Version> PartialSolution<P, V> {
                 {
                     pa.dated_derivations.pop();
                 }
-                debug_assert!(!pa.dated_derivations.is_empty());
+                let last = pa.dated_derivations.last().expect("should not be empty");
 
                 // Update highest_decision_level.
-                pa.highest_decision_level = pa.dated_derivations.last().unwrap().decision_level;
+                pa.highest_decision_level = last.decision_level;
 
                 // Recompute the assignments intersection.
-                pa.assignments_intersection = AssignmentsIntersection::Derivations(
-                    pa.dated_derivations
-                        .iter()
-                        .fold(Term::any(), |acc, dated_derivation| {
-                            let term = store[dated_derivation.cause].get(&p).unwrap().negate();
-                            acc.intersection(&term)
-                        }),
-                );
+                pa.assignments_intersection =
+                    AssignmentsIntersection::Derivations(last.intersection.clone());
                 true
             }
         });
@@ -280,6 +279,7 @@ impl<P: Package, V: Version> PartialSolution<P, V> {
         incompat: &Incompatibility<P, V>,
         store: &Arena<Incompatibility<P, V>>,
     ) -> (P, SatisfierSearch<P, V>) {
+        debug_assert_eq!(self.relation(&incompat), Relation::Satisfied);
         let satisfied_map = Self::find_satisfier(incompat, &self.package_assignments, store);
         let (satisfier_package, &(satisfier_index, _, satisfier_decision_level)) = satisfied_map
             .iter()
