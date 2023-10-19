@@ -60,7 +60,11 @@ impl<P: Package, VS: VersionSet, DP: DependencyProvider<P, VS>> DependencyProvid
         }
     }
 
-    fn choose_version(&self, package: &P, range: &VS) -> Result<Option<VS::V>, Box<dyn Error + Send + Sync>> {
+    fn choose_version(
+        &self,
+        package: &P,
+        range: &VS,
+    ) -> Result<Option<VS::V>, Box<dyn Error + Send + Sync>> {
         self.remote_dependencies.choose_version(package, range)
     }
 
