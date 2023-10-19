@@ -103,13 +103,13 @@ pub fn resolve<P: Package, VS: VersionSet>(
             state.partial_solution
         );
 
-        let Some(potential_packages) = state
+        let Some(highest_priority_pkg) = state
             .partial_solution
-            .prioritize(|p, r| dependency_provider.prioritize(p, r))
+            .pick_highest_priority_pkg(|p, r| dependency_provider.prioritize(p, r))
         else {
             return Ok(state.partial_solution.extract_solution());
         };
-        next = potential_packages;
+        next = highest_priority_pkg;
 
         let term_intersection = state
             .partial_solution

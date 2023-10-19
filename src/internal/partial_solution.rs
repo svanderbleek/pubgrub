@@ -246,7 +246,10 @@ impl<P: Package, VS: VersionSet, Priority: Ord + Clone> PartialSolution<P, VS, P
         }
     }
 
-    pub fn prioritize(&mut self, prioritizer: impl Fn(&P, &VS) -> Priority) -> Option<P> {
+    pub fn pick_highest_priority_pkg(
+        &mut self,
+        prioritizer: impl Fn(&P, &VS) -> Priority,
+    ) -> Option<P> {
         let check_all = self.changed_this_decision_level
             == self.current_decision_level.0.saturating_sub(1) as usize;
         let current_decision_level = self.current_decision_level;
