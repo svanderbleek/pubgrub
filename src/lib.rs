@@ -75,7 +75,7 @@
 //! trait for our own type.
 //! Let's say that we will use [String] for packages,
 //! and [SemanticVersion](version::SemanticVersion) for versions.
-//! This may be done quite easily by implementing the two following functions.
+//! This may be done quite easily by implementing the three following functions.
 //! ```
 //! # use pubgrub::solver::{DependencyProvider, Dependencies};
 //! # use pubgrub::version::SemanticVersion;
@@ -89,7 +89,12 @@
 //! type SemVS = Range<SemanticVersion>;
 //!
 //! impl DependencyProvider<String, SemVS> for MyDependencyProvider {
-//!     fn choose_package_version<T: Borrow<String>, U: Borrow<SemVS>>(&self,packages: impl Iterator<Item=(T, U)>) -> Result<(T, Option<SemanticVersion>), Box<dyn Error + Send + Sync>> {
+//!     fn choose_version(&self, package: &String, range: &SemVS) -> Result<Option<SemanticVersion>, Box<dyn Error + Send + Sync>> {
+//!         unimplemented!()
+//!     }
+//!
+//!     type Priority = usize;
+//!     fn prioritize(&self, package: &String, range: &SemVS) -> Self::Priority {
 //!         unimplemented!()
 //!     }
 //!

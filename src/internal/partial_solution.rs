@@ -4,6 +4,10 @@
 //! where terms are regrouped by package in a [Map].
 
 use std::fmt::Display;
+use std::hash::BuildHasherDefault;
+
+use priority_queue::PriorityQueue;
+use rustc_hash::FxHasher;
 
 use crate::internal::arena::Arena;
 use crate::internal::incompatibility::{IncompId, Incompatibility, Relation};
@@ -14,8 +18,6 @@ use crate::type_aliases::SelectedDependencies;
 use crate::version_set::VersionSet;
 
 use super::small_vec::SmallVec;
-
-use std::hash::BuildHasherDefault;
 
 type FnvIndexMap<K, V> = indexmap::IndexMap<K, V, BuildHasherDefault<rustc_hash::FxHasher>>;
 
@@ -31,13 +33,17 @@ impl DecisionLevel {
 /// The partial solution contains all package assignments,
 /// organized by package and historically ordered.
 #[derive(Clone, Debug)]
-pub struct PartialSolution<P: Package, VS: VersionSet> {
+pub struct PartialSolution<P: Package, VS: VersionSet, Priority: Ord + Clone> {
     next_global_index: u32,
     current_decision_level: DecisionLevel,
     package_assignments: FnvIndexMap<P, PackageAssignments<P, VS>>,
+    prioritized_potential_packages: PriorityQueue<P, Priority, BuildHasherDefault<FxHasher>>,
+    just_backtracked: bool,
 }
 
-impl<P: Package, VS: VersionSet> Display for PartialSolution<P, VS> {
+impl<P: Package, VS: VersionSet, Priority: Ord + Clone> Display
+    for PartialSolution<P, VS, Priority>
+{
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let mut assignments: Vec<_> = self
             .package_assignments
@@ -124,13 +130,15 @@ pub enum SatisfierSearch<P: Package, VS: VersionSet> {
     },
 }
 
-impl<P: Package, VS: VersionSet> PartialSolution<P, VS> {
+impl<P: Package, VS: VersionSet, Priority: Ord + Clone> PartialSolution<P, VS, Priority> {
     /// Initialize an empty PartialSolution.
     pub fn empty() -> Self {
         Self {
             next_global_index: 0,
             current_decision_level: DecisionLevel(0),
             package_assignments: FnvIndexMap::default(),
+            prioritized_potential_packages: PriorityQueue::default(),
+            just_backtracked: false,
         }
     }
 
@@ -209,25 +217,22 @@ impl<P: Package, VS: VersionSet> PartialSolution<P, VS> {
         }
     }
 
-    /// Extract potential packages for the next iteration of unit propagation.
-    /// Return `None` if there is no suitable package anymore, which stops the algorithm.
-    /// A package is a potential pick if there isn't an already
-    /// selected version (no "decision")
-    /// and if it contains at least one positive derivation term
-    /// in the partial solution.
-    pub fn potential_packages(&self) -> Option<impl Iterator<Item = (&P, &VS)>> {
-        let mut iter = self
-            .package_assignments
+    pub fn prioritize(&mut self, prioritizer: impl Fn(&P, &VS) -> Priority) -> Option<P> {
+        let check_all = self.just_backtracked;
+        self.just_backtracked = false;
+        let current_decision_level = self.current_decision_level;
+        let prioritized_potential_packages = &mut self.prioritized_potential_packages;
+        self.package_assignments
             .get_range(self.current_decision_level.0 as usize..)
             .unwrap()
             .iter()
+            .filter(|(_, pa)| check_all || pa.highest_decision_level == current_decision_level)
             .filter_map(|(p, pa)| pa.assignments_intersection.potential_package_filter(p))
-            .peekable();
-        if iter.peek().is_some() {
-            Some(iter)
-        } else {
-            None
-        }
+            .for_each(|(p, r)| {
+                let priority = prioritizer(&p, r);
+                prioritized_potential_packages.push(p.clone(), priority);
+            });
+        prioritized_potential_packages.pop().map(|(p, _)| p)
     }
 
     /// If a partial solution has, for every positive derivation,
@@ -290,6 +295,8 @@ impl<P: Package, VS: VersionSet> PartialSolution<P, VS> {
                 true
             }
         });
+        self.prioritized_potential_packages.clear();
+        self.just_backtracked = true;
     }
 
     /// We can add the version to the partial solution as a decision
