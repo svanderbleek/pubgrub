@@ -206,14 +206,48 @@ pub enum Dependencies<P: Package, VS: VersionSet> {
 /// Trait that allows the algorithm to retrieve available packages and their dependencies.
 /// An implementor needs to be supplied to the [resolve] function.
 pub trait DependencyProvider<P: Package, VS: VersionSet> {
+    /// [Decision making](https://github.com/dart-lang/pub/blob/master/doc/solver.md#decision-making)
+    /// is the process of choosing the next package
+    /// and version that will be appended to the partial solution.
+    ///
+    /// Every time such a decision must be made, the resolver looks at all the potential valid
+    /// packages that have changed, and a asks the dependency provider how important each one is.
+    /// For each one it calls `prioritize` with the name of the package and the current set of
+    /// acceptable versions.
+    /// The resolver will then pick the package with the highes priority from all the potential valid
+    /// packages.
+    ///
+    /// The strategy employed to prioritize packages
+    /// cannot change the existence of a solution or not,
+    /// but can drastically change the performances of the solver,
+    /// or the properties of the solution.
+    /// The documentation of Pub (PubGrub implementation for the dart programming language)
+    /// states the following:
+    ///
+    /// > Pub chooses the latest matching version of the package
+    /// > with the fewest versions that match the outstanding constraint.
+    /// > This tends to find conflicts earlier if any exist,
+    /// > since these packages will run out of versions to try more quickly.
+    /// > But there's likely room for improvement in these heuristics.
+    ///
+    /// Note: the resolver may call this even when the range has not change,
+    /// if it is more efficient for the resolveres internal data structures.
+    fn prioritize(&self, package: &P, range: &VS) -> Self::Priority;
+    /// The type returned from `prioritize`. The resolver does not care what type this is
+    /// as long as it can pick a largest one and clone it.
+    ///
+    /// [std::cmp::Reverse] can be useful if you want to pick the package with
+    /// the fewest versions that match the outstanding constraint.
+    type Priority: Ord + Clone;
+
+    /// Once the resolver has found the highest `Priority` package from all potential valid
+    /// packages, it needs to know what vertion of that package to use. The most common pattern
+    /// is to select the largest vertion that the range contains.
     fn choose_version(
         &self,
         package: &P,
         range: &VS,
     ) -> Result<Option<VS::V>, Box<dyn Error + Send + Sync>>;
-
-    type Priority: Ord + Clone;
-    fn prioritize(&self, package: &P, range: &VS) -> Self::Priority;
 
     /// Retrieves the package dependencies.
     /// Return [Dependencies::Unknown] if its dependencies are unknown.
@@ -302,7 +336,8 @@ impl<P: Package, VS: VersionSet> OfflineDependencyProvider<P, VS> {
 
 /// An implementation of [DependencyProvider] that
 /// contains all dependency information available in memory.
-/// Packages are picked with the fewest versions contained in the constraints first.
+/// Currently packages are picked with the fewest versions contained in the constraints first.
+/// But, that may change in new versions if better heuristics are found.
 /// Versions are picked with the newest versions first.
 impl<P: Package, VS: VersionSet> DependencyProvider<P, VS> for OfflineDependencyProvider<P, VS> {
     fn choose_version(

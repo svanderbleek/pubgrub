@@ -109,18 +109,17 @@
 //! ```
 //!
 //! The first method
-//! [choose_package_version](crate::solver::DependencyProvider::choose_package_version)
-//! chooses a package and available version compatible with the provided options.
-//! A helper function
-//! [choose_package_with_fewest_versions](crate::solver::choose_package_with_fewest_versions)
-//! is provided for convenience
-//! in cases when lists of available versions for packages are easily obtained.
-//! The strategy of that helper function consists in choosing the package
-//! with the fewest number of compatible versions to speed up resolution.
+//! [choose_version](crate::solver::DependencyProvider::choose_version)
+//! chooses a version compatible with the provided range for a package.
+//! The second method
+//! [prioritize](crate::solver::DependencyProvider::prioritize)
+//! in which order different packages should be chosen.
+//! Usually prioritizing packages
+//! with the fewest number of compatible versions speeds up resolution.
 //! But in general you are free to employ whatever strategy suits you best
 //! to pick a package and a version.
 //!
-//! The second method [get_dependencies](crate::solver::DependencyProvider::get_dependencies)
+//! The third method [get_dependencies](crate::solver::DependencyProvider::get_dependencies)
 //! aims at retrieving the dependencies of a given package at a given version.
 //! Returns [None] if dependencies are unknown.
 //!

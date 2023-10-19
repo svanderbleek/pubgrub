@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MPL-2.0
 
 //! A Memory acts like a structured partial solution
-//! where terms are regrouped by package in a [Map].
+//! where terms are regrouped by package in a [Map](crate::type_aliases::Map).
 
 use std::fmt::Display;
 use std::hash::BuildHasherDefault;
@@ -36,7 +36,19 @@ impl DecisionLevel {
 pub struct PartialSolution<P: Package, VS: VersionSet, Priority: Ord + Clone> {
     next_global_index: u32,
     current_decision_level: DecisionLevel,
+    /// `package_assignments` is primarily a HashMap from a package to its
+    /// `PackageAssignments`. But it can also keep the items in an order.
+    ///  We maintain three sections in this order:
+    /// 1. `[..current_decision_level]` Are packages that have had a decision made sorted by the `decision_level`.
+    ///    This makes it very efficient to extract the solution, And to backtrack to a particular decision level.
+    /// 2. `[current_decision_level..changed_this_decision_level]` Are packages that have **not** had there assignments
+    ///    changed since the last time `prioritize` has bean called. Within this range there is no sorting.
+    /// 3. `[changed_this_decision_level..]` Containes all packages that **have** had there assignments changed since
+    ///    the last time `prioritize` has bean called. The inverse is not necessarily true, some packages in the range
+    ///    did not have a change. Within this range there is no sorting.
     package_assignments: FnvIndexMap<P, PackageAssignments<P, VS>>,
+    /// `prioritized_potential_packages` is primarily a HashMap from a package with no desition and a positive assignment
+    /// to its `Priority`. But, it also maintains a max heap of packages by `Priority` order.
     prioritized_potential_packages: PriorityQueue<P, Priority, BuildHasherDefault<FxHasher>>,
     changed_this_decision_level: usize,
 }
@@ -174,6 +186,7 @@ impl<P: Package, VS: VersionSet, Priority: Ord + Clone> PartialSolution<P, VS, P
             version.clone(),
             Term::exact(version),
         ));
+        // Maintain that the beginning of the `package_assignments` Have all decisions in sorted order.
         if new_idx != old_idx {
             self.package_assignments.swap_indices(new_idx, old_idx);
         }
@@ -242,7 +255,13 @@ impl<P: Package, VS: VersionSet, Priority: Ord + Clone> PartialSolution<P, VS, P
             .get_range(self.changed_this_decision_level..)
             .unwrap()
             .iter()
-            .filter(|(_, pa)| check_all || pa.highest_decision_level == current_decision_level)
+            .filter(|(_, pa)| {
+                // We only actually need to update the package if its Been changed
+                // since the last time we called prioritize.
+                // Which means it's highest decision level is the current decision level,
+                // or if we backtracked in the mean time.
+                check_all || pa.highest_decision_level == current_decision_level
+            })
             .filter_map(|(p, pa)| pa.assignments_intersection.potential_package_filter(p))
             .for_each(|(p, r)| {
                 let priority = prioritizer(p, r);
@@ -312,6 +331,7 @@ impl<P: Package, VS: VersionSet, Priority: Ord + Clone> PartialSolution<P, VS, P
                 true
             }
         });
+        // Throw away all stored priority levels, And mark that they all need to be recomputed.
         self.prioritized_potential_packages.clear();
         self.changed_this_decision_level = self.current_decision_level.0.saturating_sub(1) as usize;
     }
