@@ -104,11 +104,7 @@ pub fn resolve<P: Package, VS: VersionSet>(
         );
 
         let Some(potential_packages) = state.partial_solution.potential_packages() else {
-            return state.partial_solution.extract_solution().ok_or_else(|| {
-                PubGrubError::Failure(
-                    "How did we end up with no package to choose but no solution?".into(),
-                )
-            });
+            return Ok(state.partial_solution.extract_solution());
         };
 
         let decision = dependency_provider
