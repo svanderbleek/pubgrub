@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["Dependencies"],"fn":["choose_package_with_fewest_versions","resolve"],"struct":["OfflineDependencyProvider"],"trait":["DependencyProvider"]};

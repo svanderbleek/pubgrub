@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["VersionParseError"],"struct":["NumberVersion","SemanticVersion"],"trait":["Version"]};
