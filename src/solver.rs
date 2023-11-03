@@ -180,8 +180,11 @@ pub fn resolve<P: Package, VS: VersionSet>(
         };
 
         // Add that package and version if the dependencies are not problematic.
-        let dep_incompats =
-            state.add_incompatibility_from_dependencies(p.clone(), v.clone(), &known_dependencies);
+        let dep_incompats = state.add_incompatibility_from_dependencies(
+            p.clone(),
+            v.clone(),
+            &known_dependencies,
+        )?;
 
         state.partial_solution.add_version(
             p.clone(),
